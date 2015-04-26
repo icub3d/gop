@@ -1,5 +1,6 @@
-algo
-====
+# algo
+
+[![GoDoc](https://godoc.org/github.com/icub3d/gop/algo?status.svg)](https://godoc.org/github.com/icub3d/gop/algo)
 
 Various common computer science algorithms implemented in Go.
 
