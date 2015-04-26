@@ -59,6 +59,14 @@ func NewFromString(machines, prefix string) *EtcdUtil {
 	return New(strings.Split(machines, ","), prefix)
 }
 
+// Client returns the underlying client if there is one.
+func (u *EtcdUtil) Client() *etcd.Client {
+	if ec, ok := u.c.(*etcd.Client); ok {
+		return ec
+	}
+	return nil
+}
+
 // Get returns the value for the given prefix+key or the default value
 // given.
 func (u *EtcdUtil) Get(key, def string) (string, uint64, error) {

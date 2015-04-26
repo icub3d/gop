@@ -69,6 +69,17 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestClient(t *testing.T) {
+	ec := &EtcdUtil{c: &ecs{}}
+	if ec.Client() != nil {
+		t.Errorf("Client(): expected nil for non etcd.Client")
+	}
+	ec = &EtcdUtil{c: etcd.NewClient([]string{"https://localhost:4001"})}
+	if ec.Client() != ec.c {
+		t.Errorf("Client(): expected non-nil for non etcd.Client")
+	}
+}
+
 // The Get*/MustGet* functions are fairly similar, so the first is
 // commented and the rest do the same things.
 
