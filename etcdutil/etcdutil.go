@@ -1,3 +1,9 @@
+// Copyright (c) 2015 Joshua Marsh. All rights reserved.
+//
+// Use of this source code is governed by the MIT license that can be
+// found in the LICENSE file in the root of the repository or at
+// https://raw.githubusercontent.com/icub3d/gop/master/LICENSE.
+
 // Package etcdutil provides a helper structure that simplifies common
 // etcd operations. The *Get* operations return a uint64 which is the
 // etcd index that can be used as a wait index.

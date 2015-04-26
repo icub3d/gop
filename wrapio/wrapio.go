@@ -1,3 +1,9 @@
+// Copyright (c) 2015 Joshua Marsh. All rights reserved.
+//
+// Use of this source code is governed by the MIT license that can be
+// found in the LICENSE file in the root of the repository or at
+// https://raw.githubusercontent.com/icub3d/gop/master/LICENSE.
+
 // Package wrapio implements wrappers for the io.Reader and io.Writer
 // interfaces. These wrappers act as middlemen that allow you to do
 // multiple things with a single stream of data. They are useful when
