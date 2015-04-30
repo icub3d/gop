@@ -684,6 +684,391 @@ func TestLastFuncWriter(t *testing.T) {
 	}
 }
 
+func TestWrapN(t *testing.T) {
+	tests := []struct {
+		delim   string
+		data    []byte
+		errWhen int    // if > 0, send errSend after errWhen bytes are written.
+		errSend error  // The err to send when errWhen is met.
+		c       int    // the c value to start with.
+		expC    int    // the c value that it should end up with.
+		n       int    // the n value to use when valling WrapN.
+		w       int    // the expected number of bytes written returned by Write().
+		err     error  // the expected error return by Write().
+		result  string // The expected value written.
+	}{
+		// No data.
+		{
+			delim:  "\r\n",
+			data:   []byte{},
+			c:      2,
+			expC:   2,
+			n:      5,
+			w:      0,
+			err:    nil,
+			result: "",
+		},
+		// Multiple writes
+		{
+			delim:  "\r\n",
+			data:   []byte("3456789012345678"),
+			c:      2,
+			expC:   3,
+			n:      5,
+			w:      22,
+			err:    nil,
+			result: "345\r\n67890\r\n12345\r\n678",
+		},
+		// A write that would exactly put enough for a delim.
+		{
+			delim:  "\r\n",
+			data:   []byte("345"),
+			c:      2,
+			expC:   0,
+			n:      5,
+			w:      5,
+			err:    nil,
+			result: "345\r\n",
+		},
+		// One just short of putting a delim.
+		{
+			delim:  "\r\n",
+			data:   []byte("34"),
+			c:      2,
+			expC:   4,
+			n:      5,
+			w:      2,
+			err:    nil,
+			result: "34",
+		},
+		// One just over a delim.
+		{
+			delim:  "\r\n",
+			data:   []byte("3456"),
+			c:      2,
+			expC:   1,
+			n:      5,
+			w:      6,
+			err:    nil,
+			result: "345\r\n6",
+		},
+		// First write, no delim.
+		{
+			delim:  "\r\n",
+			data:   []byte("1234"),
+			c:      0,
+			expC:   4,
+			n:      5,
+			w:      4,
+			err:    nil,
+			result: "1234",
+		},
+		// First write, one delim.
+		{
+			delim:  "\r\n",
+			data:   []byte("12345"),
+			c:      0,
+			expC:   0,
+			n:      5,
+			w:      7,
+			err:    nil,
+			result: "12345\r\n",
+		},
+		// first write, multiple delims.
+		{
+			delim:  "\r\n",
+			data:   []byte("1234567890123"),
+			c:      0,
+			expC:   3,
+			n:      5,
+			w:      17,
+			err:    nil,
+			result: "12345\r\n67890\r\n123",
+		},
+		// One delim written in the middle.
+		{
+			delim:  "A",
+			data:   []byte("3456789"),
+			c:      2,
+			expC:   4,
+			n:      5,
+			w:      8,
+			err:    nil,
+			result: "345A6789",
+		},
+		// delim is empty.
+		{
+			delim:  "",
+			data:   []byte("3456789"),
+			c:      2,
+			expC:   4,
+			n:      5,
+			w:      7,
+			err:    nil,
+			result: "3456789",
+		},
+		// Return an error after some of the writing.
+		{
+			delim:   "\r\n",
+			data:    []byte("3456789012345678"),
+			errWhen: 13,
+			errSend: io.EOF,
+			c:       2,
+			expC:    5,
+			n:       5,
+			w:       17,
+			err:     io.EOF,
+			result:  "345\r\n67890\r\n12345",
+		},
+		// Return an error while writing delim.
+		{
+			delim:   "\r\n",
+			data:    []byte("3456789012345678"),
+			errWhen: 11,
+			errSend: io.EOF,
+			c:       2,
+			expC:    0,
+			n:       5,
+			w:       12,
+			err:     io.EOF,
+			result:  "345\r\n67890\r\n",
+		},
+	}
+	for k, test := range tests {
+		buf := &bytes.Buffer{}
+		w := NewWrapN(test.n, test.delim, &eww{w: buf, n: test.errWhen, err: test.errSend})
+		w.(*wrapn).c = test.c
+		n, err := w.Write(test.data)
+		if test.w != n {
+			t.Errorf("Test %v: actual written (%v) is not expected written (%v)",
+				k, n, test.w)
+		}
+		if test.err != err {
+			t.Errorf("Test %v: actual error (%v) is not expected error (%v)",
+				k, err, test.err)
+		}
+		if test.expC != w.(*wrapn).c {
+			t.Errorf("Test %v: actual c (%v) is not expected c (%v)",
+				k, w.(*wrapn).c, test.expC)
+		}
+		if test.result != buf.String() {
+			t.Errorf("Test %v: actual result is not expected result:\n%v\n%v",
+				k, buf.String(), test.result)
+		}
+	}
+}
+
+func TestUnwrapN(t *testing.T) {
+	tests := []struct {
+		size        int    // The size of slice to send to Read.
+		data        []byte // The data to copy on Read.
+		errSize     int    // if > 0, send this along with errSent for the read.
+		errSent     error  // The err to send when errWhen is met.
+		leftover    int    // the leftover value to start with.
+		expLeftover int    // the leftover value that it should end up with.
+		inDelim     int    // The inDelim value to start with.
+		expInDelim  int    // the inDelim value that it should end up with.
+		n           int    // the n value to use when valling WrapN.
+		delim       string // The delim to use.
+		r           int    // the expected number of bytes read returned by Read().
+		err         error  // the expected error return by Read().
+		result      []byte // The expected value written.
+	}{
+		// Read nothing.
+		{
+			size:        0,
+			data:        []byte("doesn't matter"),
+			errSize:     0,
+			errSent:     nil,
+			leftover:    2,
+			expLeftover: 2,
+			n:           5,
+			delim:       "\r\n",
+			r:           0,
+			err:         nil,
+			result:      []byte(""),
+		},
+		// Want something, but don't read enough.
+		{
+			size:        5,
+			data:        []byte("doesn't matter"),
+			errSize:     0,
+			errSent:     io.EOF,
+			leftover:    2,
+			expLeftover: 2,
+			inDelim:     1,
+			expInDelim:  1,
+			n:           5,
+			delim:       "\r\n",
+			r:           0,
+			err:         io.EOF,
+			result:      []byte(""),
+		},
+		// No delims
+		{
+			size:        3,
+			data:        []byte("hello"),
+			errSize:     3,
+			errSent:     nil,
+			leftover:    0,
+			expLeftover: 2,
+			n:           5,
+			delim:       "\r\n",
+			r:           3,
+			err:         nil,
+			result:      []byte("hel"),
+		},
+		// Delim at the end of a read
+		{
+			size:        5,
+			data:        []byte("hello\r\n"),
+			errSize:     7,
+			errSent:     nil,
+			leftover:    0,
+			expLeftover: 0,
+			n:           5,
+			delim:       "\r\n",
+			r:           5,
+			err:         nil,
+			result:      []byte("hello"),
+		},
+		// Multiple delims.
+		{
+			size:        13,
+			data:        []byte("hello\r\nworld\r\nABCDE\r\nFG"),
+			errSize:     17,
+			errSent:     nil,
+			leftover:    0,
+			expLeftover: 2,
+			n:           5,
+			delim:       "\r\n",
+			r:           13,
+			err:         nil,
+			result:      []byte("helloworldABC"),
+		},
+		// inDelim, chopped
+		{
+			size:        13,
+			data:        []byte("\nhello\r\nworld\r\nABCDE\r\nFG"),
+			errSize:     18,
+			errSent:     nil,
+			leftover:    0,
+			expLeftover: 2,
+			inDelim:     1,
+			expInDelim:  0,
+			n:           5,
+			delim:       "\r\n",
+			r:           13,
+			err:         nil,
+			result:      []byte("helloworldABC"),
+		},
+		// inDelim, wouldn't read enough
+		{
+			size:        13,
+			data:        []byte("\r\nhello\r\nworld\r\nABCDE\r\nFG"),
+			errSize:     1,
+			errSent:     io.EOF,
+			leftover:    0,
+			expLeftover: 0,
+			inDelim:     2,
+			expInDelim:  1,
+			n:           5,
+			delim:       "\r\n\r\n",
+			r:           0,
+			err:         io.EOF,
+			result:      []byte(""),
+		},
+		// Result ends with inDelim.
+		{
+			size:        13,
+			data:        []byte("hello\r\nworld\r\nABCDE\r\nFG"),
+			errSize:     6,
+			errSent:     io.EOF,
+			leftover:    0,
+			expLeftover: 0,
+			inDelim:     0,
+			expInDelim:  1,
+			n:           5,
+			delim:       "\r\n",
+			r:           5,
+			err:         io.EOF,
+			result:      []byte("hello"),
+		},
+	}
+
+	for k, test := range tests {
+		buf := make([]byte, test.size)
+		r := NewUnwrapN(test.n, test.delim, &er{data: test.data, n: test.errSize, err: test.errSent})
+		r.(*unwrapn).leftover = test.leftover
+		r.(*unwrapn).inDelim = test.inDelim
+		n, err := r.Read(buf)
+		if test.r != n {
+			t.Errorf("Test %v: actual read (%v) is not expected read (%v)",
+				k, n, test.r)
+		}
+		if test.err != err {
+			t.Errorf("Test %v: actual error (%v) is not expected error (%v)",
+				k, err, test.err)
+		}
+		if test.expLeftover != r.(*unwrapn).leftover {
+			t.Errorf("Test %v: actual leftover (%v) is not expected leftover (%v)",
+				k, r.(*unwrapn).leftover, test.expLeftover)
+		}
+		if test.expInDelim != r.(*unwrapn).inDelim {
+			t.Errorf("Test %v: actual inDelim (%v) is not expected inDelim (%v)",
+				k, r.(*unwrapn).inDelim, test.expInDelim)
+		}
+		if !reflect.DeepEqual(buf[:n], test.result) {
+			t.Errorf("Test %v: actual result is not expected result:\n%v\n%v",
+				k, buf[:n], test.result)
+		}
+	}
+
+}
+
+func TestUnwrapNMulti(t *testing.T) {
+	buf := bytes.NewBuffer([]byte("hello\r\nworld\r\nABCDE\r\nFGHIJ\r\nKLMNO\r\n"))
+	res := make([]byte, 5)
+	r := NewUnwrapN(5, "\r\n", buf)
+	n, err := r.Read(res)
+	if n != 5 || err != nil || !reflect.DeepEqual(res, []byte("hello")) {
+		t.Fatalf("First multi-read failed: %v %v %v", n, err, res)
+	}
+	res = make([]byte, 10)
+	n, err = r.Read(res)
+	if n != 10 || err != nil || !reflect.DeepEqual(res, []byte("worldABCDE")) {
+		t.Fatalf("Second multi-read failed: %v %v %v", n, err, res)
+	}
+	res = make([]byte, 3)
+	n, err = r.Read(res)
+	if n != 3 || err != nil || !reflect.DeepEqual(res, []byte("FGH")) {
+		t.Fatalf("Third multi-read failed: %v %v %v", n, err, res)
+	}
+	res = make([]byte, 7)
+	n, err = r.Read(res)
+	if n != 7 || err != nil || !reflect.DeepEqual(res, []byte("IJKLMNO")) {
+		t.Fatalf("Final multi-read failed: %v %v %v", n, err, string(res))
+	}
+}
+
+// Err is a helper for testing writers that need to error after
+// writing n bytes.
+type eww struct {
+	w   io.Writer
+	n   int
+	c   int
+	err error
+}
+
+func (w *eww) Write(data []byte) (int, error) {
+	n, err := w.w.Write(data)
+	w.c += n
+	if w.err != nil && w.c >= w.n {
+		return n, w.err
+	}
+	return n, err
+}
+
 // Er is a helper for testing reads. It always writes the given data
 // to p and returns the given values.
 type er struct {

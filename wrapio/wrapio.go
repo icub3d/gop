@@ -383,3 +383,140 @@ func NewLastFuncWriter(handler func([]byte) []byte,
 	}
 	return &last{handler: handler, w: w}
 }
+
+// NewUnwrapN returns a Reader that unwraps data read from the given
+// Reader. It essentially undoes what NewWrapN does. The delim is
+// merely used to know how many characters to strip out of the
+// underlying reader. No checks are made against the delim and the
+// data stripped out. It differs from NewWrapN though in that it
+// returns how much was written to the slice so that it can be used
+// for reslicing, etc.
+func NewUnwrapN(n int, delim string, r io.Reader) io.Reader {
+	return &unwrapn{r: r, delimSize: len([]byte(delim)), wrap: n}
+}
+
+type unwrapn struct {
+	r         io.Reader
+	buf       []byte
+	inDelim   int
+	delimSize int
+	wrap      int
+	leftover  int // The amount read on the last call that wasn't unwrapped.
+}
+
+func (w *unwrapn) Read(data []byte) (int, error) {
+	// Figure out how much we need to read enough to fill data.
+	l := len(data)
+	needed := w.inDelim + l + ((l-w.leftover)/w.wrap)*w.delimSize
+	if needed < 1 {
+		return 0, nil
+	}
+	// Resize the buffer if needed.
+	if cap(w.buf) < needed {
+		w.buf = make([]byte, needed)
+	} else {
+		w.buf = w.buf[:needed]
+	}
+
+	// Read as much as we can into the buffer.
+	read, err := w.r.Read(w.buf)
+	// If we didn't get anything we are done.
+	if read < 1 {
+		return read, err
+	}
+
+	// If we are in part of the delimiter, chop it off.
+	unread := w.buf[:read]
+	if w.inDelim > 0 {
+		size := w.inDelim
+		if size > read {
+			// We won't get out of the delimiter so we are done.
+			w.inDelim -= read
+			return 0, err
+		}
+		unread = unread[size:]
+		w.inDelim = 0
+
+	}
+
+	// Copy the chunks over to the actual buffer they want data from
+	// until we've read it all.
+	written := 0 // written to data.
+	for {
+		end := w.wrap
+		if w.leftover > 0 {
+			end = w.leftover
+			w.leftover = 0
+		}
+		if end > len(unread) {
+			end = len(unread)
+		}
+		copy(data[written:], unread[:end])
+		written += end
+		unread = unread[end:]
+		if len(unread) < 1 {
+			// We've read everything and are done.
+			w.leftover = w.wrap - end
+			return written, err
+		} else if len(unread) <= w.delimSize {
+			// we are done, but may have some delim leftover.
+			w.inDelim = w.delimSize - len(unread)
+			return written, err
+		}
+		// skip over the delim.
+		unread = unread[w.delimSize:]
+	}
+}
+
+// NewWrapN returns a Writer that wraps the data written to the given
+// writer using the given delim every n characters. While not used
+// often, some systems expect data to be wrapped with "\r\n" every 80
+// or 132 characters or maybe you want to wrap it yourself. This
+// allows you do that or insert anything you want ever n
+// characters. The number of bytes returned by a Write() may be more
+// than the given data. In this case, the Write included one or more
+// delims with the writing. It does not respect word boundries and
+// works strictly on the number of bytes.
+func NewWrapN(n int, delim string, w io.Writer) io.Writer {
+	return &wrapn{w: w, delim: []byte(delim), n: n}
+}
+
+type wrapn struct {
+	w     io.Writer
+	delim []byte
+	n     int
+	c     int // The amount written on the last call that wasn't wrapped.
+}
+
+func (w *wrapn) Write(data []byte) (int, error) {
+	l := len(data)
+	written := 0 // How much we've written from the actual data.
+	t := 0       // The total amount written.
+	for written < l {
+		// Figure out how much to write.
+		toWrite := l - written
+		if toWrite > w.n-w.c {
+			toWrite = w.n - w.c
+		}
+		// Write that amount out to the buffer.
+		if toWrite > 0 {
+			n, err := w.w.Write(data[written : written+toWrite])
+			written += n
+			t += n
+			w.c += n
+			if err != nil {
+				return t, err
+			}
+		}
+		// if we written enough for a delim, output it.
+		if w.c == w.n {
+			n, err := w.w.Write(w.delim)
+			t += n
+			w.c = 0
+			if err != nil {
+				return t, err
+			}
+		}
+	}
+	return t, nil
+}
