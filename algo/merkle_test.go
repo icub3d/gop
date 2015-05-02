@@ -9,8 +9,40 @@ package algo
 import (
 	"bytes"
 	"crypto/sha256"
+	"fmt"
 	"testing"
 )
+
+func ExampleMerkleTree() {
+	// Make the tree.
+	data := [][]byte{
+		[]byte("cat"),
+		[]byte("dog"),
+		[]byte("mouse"),
+		[]byte("parrot"),
+		[]byte("hamster"),
+		[]byte("goat"),
+	}
+	h := sha256.New()
+	mt := NewMerkleTree(data, h)
+
+	// This is the hash of a parrot. Normally you'd get it some some
+	// external source.
+	parrotHash := []byte{
+		0x44, 0x88, 0xb8, 0xb8, 0x6b, 0x1a, 0xc0, 0x61, 0xdb, 0xe3,
+		0x72, 0x42, 0x29, 0x7e, 0x58, 0x27, 0xda, 0xd8, 0x89, 0x82,
+		0x3f, 0xd1, 0xa5, 0xac, 0xae, 0xd4, 0x3d, 0xec, 0x1, 0x8,
+		0xd0, 0x48,
+	}
+
+	// Verify the parrot hash.
+	p := mt.Proof(parrotHash)
+	if VerifyMerkleProof(p, parrotHash, mt.Root(), sha256.New()) {
+		fmt.Println("parrot verified")
+	}
+	// Output:
+	// parrot verified
+}
 
 func TestMerkleTree(t *testing.T) {
 	data := [][]byte{

@@ -6,7 +6,29 @@
 
 package algo
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
+
+func ExampleBloomFilter() {
+	bf := NewBloomFilter(100, 5)
+	for _, s := range []string{"Dog", "Cat", "Mouse", "Elephant", "Lion"} {
+		bf.Add([]byte(s))
+	}
+
+	for _, s := range []string{"Dog", "Lion", "Nothing"} {
+		if bf.Exists([]byte(s)) {
+			fmt.Println(s, "found")
+		} else {
+			fmt.Println(s, "not found")
+		}
+	}
+	// Output:
+	// Dog found
+	// Lion found
+	// Nothing not found
+}
 
 func TestNewBloomFilter(t *testing.T) {
 	bf := NewBloomFilter(10, 2)

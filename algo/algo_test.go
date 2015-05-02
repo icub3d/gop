@@ -8,9 +8,19 @@ package algo
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"testing"
 )
+
+func ExampleLevenshtein() {
+	h := "Happy Christmas"
+	m := "Merry Christmas"
+	l := Levenshtein(h, m)
+	fmt.Println(l)
+	// Output:
+	// 4
+}
 
 func TestMinInt(t *testing.T) {
 	tests := []struct {

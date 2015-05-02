@@ -170,7 +170,7 @@ func (mt *MerkleTree) Proof(sum []byte) *MerkleProofNode {
 // VerifyMerkleProof uses the given proof to verify that the lineage
 // given is valid. In order for the proof to succeed the leaf of the
 // proof must be equal to the given leaf, the hashes up the proof must
-// be align with the hashes built with the given hash, and the
+// align with the hashes built with the given hash, and the
 // resulting root of the proof must be equal to the given root.
 func VerifyMerkleProof(proof *MerkleProofNode, leaf, root []byte, h hash.Hash) bool {
 	// Sanity Checks.
