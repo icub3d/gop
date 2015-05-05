@@ -8,6 +8,7 @@ package algo
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -129,4 +130,121 @@ func BenchmarkLevenshtein(b *testing.B) {
 	for _, t := range dict {
 		Levenshtein(test, t)
 	}
+}
+
+func TestNPIChecksum(t *testing.T) {
+	// This also checks most of Luhn.
+	tests := []struct {
+		s        string
+		expected string
+		err      error
+	}{
+		{s: "123456789", expected: "3", err: nil},
+		{s: "992739871", expected: "6", err: nil},
+		{s: "000000000", expected: "6", err: nil},
+		{s: "300000000", expected: "0", err: nil},
+		{s: "000000060", expected: "0", err: nil},
+		{s: "A0000", expected: "", err: errors.New(`strconv.ParseInt: parsing "A": invalid syntax`)},
+	}
+
+	for k, test := range tests {
+		result, err := NPIChecksum(test.s)
+		if fmt.Sprintf("%v", err) != fmt.Sprintf("%v", test.err) {
+			t.Errorf("Test %v: expected error '%v' but got '%v'", k, test.err, err)
+		}
+		if result != test.expected {
+			t.Errorf("Test %v: expected result '%v' but got '%v'", k, test.expected, result)
+		}
+	}
+}
+
+func TestNPIChecksumAppend(t *testing.T) {
+	tests := []struct {
+		s        string
+		expected string
+		err      error
+	}{
+		{s: "123456789", expected: "1234567893", err: nil},
+		{s: "992739871", expected: "9927398716", err: nil},
+		{s: "000000000", expected: "0000000006", err: nil},
+		{s: "300000000", expected: "3000000000", err: nil},
+		{s: "000000060", expected: "0000000600", err: nil},
+		{s: "A0000", expected: "", err: errors.New(`strconv.ParseInt: parsing "A": invalid syntax`)},
+	}
+
+	for k, test := range tests {
+		result, err := NPIChecksumAppend(test.s)
+		if fmt.Sprintf("%v", err) != fmt.Sprintf("%v", test.err) {
+			t.Errorf("Test %v: expected error '%v' but got '%v'", k, test.err, err)
+		}
+		if result != test.expected {
+			t.Errorf("Test %v: expected result '%v' but got '%v'", k, test.expected, result)
+		}
+	}
+}
+
+func TestNPIChecksumCheck(t *testing.T) {
+	// This also checks most of LuhnCheck.
+	tests := []struct {
+		s        string
+		expected bool
+	}{
+		{s: "1234567893", expected: true},
+		{s: "9927398716", expected: true},
+		{s: "0000000006", expected: true},
+		{s: "3000000000", expected: true},
+		{s: "0000000600", expected: true},
+		{s: "A000000000", expected: false},
+		{s: "1234567890", expected: false},
+		{s: "1234567891", expected: false},
+		{s: "1234567892", expected: false},
+		{s: "1234567894", expected: false},
+		{s: "1234567895", expected: false},
+		{s: "1234567896", expected: false},
+		{s: "1234567897", expected: false},
+		{s: "1234567898", expected: false},
+		{s: "1234567899", expected: false},
+	}
+
+	for k, test := range tests {
+		result := NPIChecksumCheck(test.s)
+		if result != test.expected {
+			t.Errorf("Test %v: NPIChecksumCheck(%v) != %v", k, test.s, test.expected)
+		}
+	}
+}
+
+func TestLuhnErrors(t *testing.T) {
+	if LuhnCheck("1") != false {
+		t.Errorf(`LuhnCheck("1") != false`)
+	}
+	if s, err := Luhn("1"); s != "" || err != ErrInvalidParams {
+		t.Errorf(`Luhn("1") != "", ErrInvalidParams`)
+	}
+}
+
+func TestLuhnAppend(t *testing.T) {
+	tests := []struct {
+		s        string
+		expected string
+		err      error
+	}{
+		{s: "123456789", expected: "1234567897", err: nil},
+		{s: "992739871", expected: "9927398710", err: nil},
+		{s: "000000000", expected: "0000000000", err: nil},
+		{s: "300000000", expected: "3000000004", err: nil},
+		{s: "000000060", expected: "0000000604", err: nil},
+		{s: "A0000", expected: "", err: errors.New(`strconv.ParseInt: parsing "A": invalid syntax`)},
+	}
+
+	for k, test := range tests {
+		result, err := LuhnAppend(test.s)
+		if fmt.Sprintf("%v", err) != fmt.Sprintf("%v", test.err) {
+			t.Errorf("Test %v: expected error '%v' but got '%v'", k, test.err, err)
+		}
+		if result != test.expected {
+			t.Errorf("Test %v: expected result '%v' but got '%v'", k, test.expected, result)
+		}
+	}
+
 }
