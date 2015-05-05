@@ -10,6 +10,8 @@ package algo
 
 import (
 	"errors"
+	"strconv"
+	"strings"
 )
 
 var (
@@ -105,4 +107,90 @@ func Levenshtein(s, t string) int {
 		}
 	}
 	return v[1][len(t)]
+}
+
+// LuhnCheck verifies the checksum (the last digit) of the given
+// number using the Luhn algorithm:
+// http://en.wikipedia.org/wiki/Luhn_algorithm.
+func LuhnCheck(s string) bool {
+	if len(s) < 2 {
+		return false
+	}
+	c := s[len(s)-1:]
+	l, err := Luhn(s[:len(s)-1])
+	if err != nil {
+		return false
+	}
+	return l == c
+}
+
+// Luhn calculates the Luhn checksum of the given number using the
+// Luhn algorithm: http://en.wikipedia.org/wiki/Luhn_algorithm. It
+// should not have a checksum at the end of it.
+func Luhn(s string) (string, error) {
+	if len(s) < 2 {
+		return "", ErrInvalidParams
+	}
+	double := true
+	sum := 0
+	for x := len(s) - 1; x >= 0; x-- {
+		i, err := strconv.Atoi(s[x : x+1])
+		if err != nil {
+			return "", err
+		}
+		if double {
+			i *= 2
+			if i >= 10 {
+				i = 1 + i%10
+			}
+			sum += i
+		} else {
+			sum += i
+		}
+		double = !double
+	}
+	sum *= 9
+	return strconv.Itoa(sum % 10), nil
+}
+
+// LuhnAppend appends the Luhn checksum to the given number.
+func LuhnAppend(n string) (string, error) {
+	l, err := Luhn(n)
+	if err != nil {
+		return "", err
+	}
+	return n + l, nil
+}
+
+// NPIChecksum returns the Luhn checksum for the given number. It
+// differs from a normal Luhn in that if the number doesn't begin with
+// 80840, 80840 will be prepended to the number for determining the
+// checksum. It should not have a checksum at the end of it.
+func NPIChecksum(s string) (string, error) {
+	if !strings.HasPrefix(s, "80840") {
+		s = "80840" + s
+	}
+	return Luhn(s)
+}
+
+// NPIChecksumCheck calculates and verifies the checksum using the
+// Luhn algorithm. If the number doesn't begin with 80840, 80840 will
+// be prepended to it before checking.
+func NPIChecksumCheck(s string) bool {
+	if !strings.HasPrefix(s, "80840") {
+		s = "80840" + s
+	}
+	return LuhnCheck(s)
+}
+
+// NPIChecksumAppend calculates the checksum for the given partial NPI
+// and appends the checksum to it. If the number doesn't begin with
+// 80840, 80840 will be prepended to it before determing the checksum,
+// but won't be included in the result.
+func NPIChecksumAppend(s string) (string, error) {
+	cs, err := NPIChecksum(s)
+	if err != nil {
+		return "", err
+	}
+	return s + cs, nil
 }
