@@ -10,14 +10,18 @@ import (
 	"container/heap"
 	"fmt"
 	"log"
+	"sync"
+
+	"golang.org/x/net/context"
 )
 
 // Sourcer is the interface that allows a type to be run as a source
-// that communicates approptiately with a gopool. The Next() and Add()
-// methods are synchronized internally, so as long as no other places
-// are calling them, they won't suffer from race conditions. If they
-// might be called concurrently, it is the implementers responsibility
-// to synchronize usage (e.g. through a mutex).
+// that communicates approptiately with a gopool. If this Sourcer is
+// used by a managed source, the Next() and Add() methods are
+// synchronized internally, so as long as no other places are calling
+// them, they won't suffer from race conditions. If they might be
+// called concurrently, it is the implementers responsibility to
+// synchronize usage (e.g. through a mutex).
 type Sourcer interface {
 	fmt.Stringer
 
@@ -27,33 +31,43 @@ type Sourcer interface {
 
 	// Add schedules a task. It aslo reschedules a task during cleanup
 	// if a task was taken but was unable to be sent. As such, it should
-	// be available until the goroutine managing it is done.
+	// be available until the ManagedSource using it returns from a call
+	// to Wait().
 	Add(t Task)
 }
 
-// NewSource creates a managed source using the given Sourcer and
-// starts a goroutine that synchronizes access to the given
-// Interface. If a wakeup channel is non-nil, it can be used to force
-// the goroutine to wakeup and look for new tasks. If verbose is true
-// things happening in the channel are logged to default logger. The
-// returned channels are the source, add and stop channels
-// respectively. The returned source channel is used for getting
-// tasks. The add channel is used to add tasks elsewhere.
+// ManagedSource wraps a Sourcer in a goroutine that synchronizes
+// access to the Sourcer.
+type ManagedSource struct {
+	// Source is the channel where tasks can be retreived.
+	Source <-chan Task
+
+	// Add is the channel on which tasks can be added.
+	Add chan<- Task
+
+	wg *sync.WaitGroup
+}
+
+// Wait blocks until the ManagedSource is done. If you want to ensure
+// that the managed source has cleaned up completely, you should call
+// this.
+func (ms *ManagedSource) Wait() {
+	ms.wg.Wait()
+}
+
+// NewManagedSource creates a managed source using the given Sourcer and
+// starts it. If the wakeup channel is non-nil, it can be used to force
+// the goroutine to wakeup and look for new tasks. This may be useful
+// if the source may be empty but is later filled.
 //
-// The stop channel is used to stop the running goroutine. When it is
-// time to stop, simply send a new channel down that channel. When the
-// goroutine has cleaned up, the given channel will be closed. For
-// example:
-//
-//    src, add, stop := New(s, false, nil)
-//    done := make(chan struct{})
-//    stop <- done // Send the channel we are goign to wait on.
-//    <- done      // Once this returns, thing are cleaned up.
-func NewSource(s Sourcer, verbose bool, wakeup chan struct{}) (<-chan Task,
-	chan<- Task, chan chan struct{}) {
+// If verbose is true things happening in the channel are logged to
+// the default logger.
+func NewManagedSource(s Sourcer, verbose bool, wakeup chan struct{},
+	ctx context.Context) *ManagedSource {
 	source := make(chan Task)
-	stop := make(chan chan struct{})
 	add := make(chan Task)
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
 		var src chan Task
 		var top Task
@@ -95,7 +109,7 @@ func NewSource(s Sourcer, verbose bool, wakeup chan struct{}) (<-chan Task,
 						log.Printf("[source %v] added task %v", s, t)
 					}
 				}
-			case c := <-stop:
+			case <-ctx.Done():
 				if verbose {
 					log.Printf("[source %v] stop requested", s)
 				}
@@ -105,9 +119,7 @@ func NewSource(s Sourcer, verbose bool, wakeup chan struct{}) (<-chan Task,
 						log.Printf("[source %v] added back task %v", s, top)
 					}
 				}
-				if c != nil {
-					close(c)
-				}
+				wg.Done()
 				return
 			case src <- top:
 				if verbose {
@@ -117,7 +129,7 @@ func NewSource(s Sourcer, verbose bool, wakeup chan struct{}) (<-chan Task,
 			}
 		}
 	}()
-	return source, add, stop
+	return &ManagedSource{Source: source, Add: add, wg: &wg}
 }
 
 // PriorityTask is a Task that has a priority.
@@ -141,11 +153,11 @@ type pt struct {
 	t Task
 }
 
-func (t *pt) String() string            { return t.t.String() }
-func (t *pt) Priority() int             { return t.p }
-func (t *pt) Run(s chan struct{}) error { return t.t.Run(s) }
+func (t *pt) String() string        { return t.t.String() }
+func (t *pt) Priority() int         { return t.p }
+func (t *pt) Run(c context.Context) { t.t.Run(c) }
 
-// PriorityQueue is an implementation of Interface using a priority
+// PriorityQueue is an implementation of a Sourcer using a priority
 // queue. Higher priority tasks will be done first.
 type PriorityQueue struct {
 	q    *pq
