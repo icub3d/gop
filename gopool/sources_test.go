@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 func TestNewSource(t *testing.T) {
@@ -23,11 +25,12 @@ func TestNewSource(t *testing.T) {
 	// Setup
 	pq := NewPriorityQueue("test")
 	wakeup := make(chan struct{})
-	src, add, stop := NewSource(pq, true, wakeup)
+	ctx, cancel := context.WithCancel(context.Background())
+	ms := NewManagedSource(pq, true, wakeup, ctx)
 
 	// Make sure the top isn't selecting.
 	select {
-	case c, ok := <-src:
+	case c, ok := <-ms.Source:
 		t.Errorf("got task from empty: %v %v", ok, c)
 	default:
 	}
@@ -39,23 +42,22 @@ func TestNewSource(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	// Add two items.
-	add <- NewPriorityTask(&sct{name: "first"}, 5)
-	add <- NewPriorityTask(&sct{name: "third"}, 7)
-	add <- NewPriorityTask(&sct{name: "second"}, 10)
+	ms.Add <- NewPriorityTask(&sct{name: "first"}, 5)
+	ms.Add <- NewPriorityTask(&sct{name: "third"}, 7)
+	ms.Add <- NewPriorityTask(&sct{name: "second"}, 10)
 	// Close the add.
-	close(add)
+	close(ms.Add)
 	time.Sleep(20 * time.Millisecond)
 
 	// Get one item
-	c := <-src
+	c := <-ms.Source
 	if c.String() != "first" {
 		t.Errorf("Didn't get first task.")
 	}
 
 	// Cleanup
-	done := make(chan struct{})
-	stop <- done
-	<-done
+	cancel()
+	ms.Wait()
 
 	// Make sure the task was added back:
 	if pq.q.Len() != 2 {
@@ -96,10 +98,10 @@ func TestPriorityTask(t *testing.T) {
 	buf := &bytes.Buffer{}
 	c := &sct{name: "test", w: buf}
 	pt := NewPriorityTask(c, 42)
-	s := make(chan struct{})
-	pt.Run(s)
-	if c.s != s {
-		t.Errorf("stop channel didn't work.")
+	ctx := context.Background()
+	pt.Run(ctx)
+	if c.ctx != ctx {
+		t.Errorf("context didn't work.")
 	}
 	if buf.String() != "test" {
 		t.Errorf(`Run() didn't run, buf.String() != "test": %v`, buf.String())
@@ -160,9 +162,9 @@ func TestPriorityQueue(t *testing.T) {
 // w and sets the stop channel.
 type sct struct {
 	name string
-	s    chan struct{}
+	ctx  context.Context
 	w    io.Writer
 }
 
-func (t *sct) Run(s chan struct{}) error { t.s = s; t.w.Write([]byte(t.name)); return nil }
-func (t *sct) String() string            { return t.name }
+func (t *sct) Run(ctx context.Context) { t.ctx = ctx; t.w.Write([]byte(t.name)) }
+func (t *sct) String() string          { return t.name }

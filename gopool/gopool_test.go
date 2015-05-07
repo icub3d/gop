@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 func TestGoPool(t *testing.T) {
@@ -35,19 +37,20 @@ func TestGoPool(t *testing.T) {
 	// Do the setup.
 	pq := NewPriorityQueue("test-queue")
 	wakeup := make(chan struct{})
-	src, add, stop := NewSource(pq, true, wakeup)
-	pool := New("test-pool", 5, true, src)
+	ctx, cancel := context.WithCancel(context.Background())
+	ms := NewManagedSource(pq, true, wakeup, ctx)
+	pool := New("test-pool", 5, true, ctx, ms.Source)
 
 	// Add a bunch of tasks and wait for them to finish.
 	for x := 0; x < 500; x++ {
-		add <- &tt{f: ai, i: x}
+		ms.Add <- &tt{f: ai, i: x}
 		exp = append(exp, x)
 	}
 	for pq.q.Len() > 1 {
 		time.Sleep(20 * time.Millisecond)
 	}
 	for x := 500; x < 1000; x++ {
-		add <- &tt{f: ai, i: x}
+		ms.Add <- &tt{f: ai, i: x}
 		exp = append(exp, x)
 	}
 	for pq.q.Len() > 1 {
@@ -55,10 +58,9 @@ func TestGoPool(t *testing.T) {
 	}
 
 	// Cleanup
-	pool.Stop()
-	done := make(chan struct{})
-	stop <- done
-	<-done
+	cancel()
+	pool.Wait()
+	ms.Wait()
 
 	// Verify the list.
 	sort.Ints(items)
@@ -83,13 +85,13 @@ func TestGoPoolInputSourceClosed(t *testing.T) {
 
 	// Do the setup.
 	src := make(chan Task)
-	pool := New("test-pool", 5, true, src)
+	pool := New("test-pool", 5, true, context.Background(), src)
 
 	close(src)
 	time.Sleep(10 * time.Millisecond)
 
 	// Cleanup
-	pool.Stop()
+	pool.Wait()
 
 	// Verify we go some expected log values.
 	log := buf.String()
@@ -99,41 +101,12 @@ func TestGoPoolInputSourceClosed(t *testing.T) {
 	}
 }
 
-func TestGoPoolTaskStop(t *testing.T) {
-	// TODO this isn't very rigorous and relies on time.Sleep.
-	buf := &bytes.Buffer{}
-	log.SetOutput(buf)
-
-	// Do the setup.
-	src := make(chan Task)
-	pool := New("test-pool", 5, true, src)
-
-	// Add the task we'll close. Sleep a bit so one of them pick it up.
-	src <- &tt{f: func(i int) {}, i: 1, stop: true}
-	time.Sleep(10 * time.Millisecond)
-
-	// Cleanup
-	pool.Stop()
-
-	// Verify we go some expected log values.
-	log := buf.String()
-	e := " running 1 stopped: stop requested"
-	if !strings.Contains(log, e) {
-		t.Errorf("Didn't get an entry for: %v", e)
-	}
-}
-
 type tt struct {
-	f    func(int)
-	i    int
-	stop bool
+	f func(int)
+	i int
 }
 
 func (t *tt) String() string { return strconv.Itoa(t.i) }
-func (t *tt) Run(stop chan struct{}) error {
-	if t.stop {
-		return ErrStopped
-	}
+func (t *tt) Run(ctx context.Context) {
 	t.f(t.i)
-	return nil
 }
