@@ -16,39 +16,43 @@ import (
 	"github.com/coreos/go-etcd/etcd"
 )
 
+var subSubNodes = etcd.Nodes{
+	&etcd.Node{
+		Key:   "/myport/test/k0-0/k1-0/k2-0",
+		Value: "v2-0",
+	},
+	&etcd.Node{
+		Key:   "/myport/test/k0-0/k1-0/k2-1",
+		Value: "v2-1",
+	},
+	&etcd.Node{
+		Key:   "/myport/test/k0-0/k1-0/k2-2",
+		Value: "v2-2",
+	},
+}
+
+var subNodes = etcd.Nodes{
+	&etcd.Node{
+		Key:   "/myport/test/k0-0/k1-0",
+		Dir:   true,
+		Nodes: subSubNodes,
+	},
+	&etcd.Node{
+		Key:   "/myport/test/k0-0/k1-1",
+		Value: "v1-1",
+	},
+	&etcd.Node{
+		Key:   "/myport/test/k0-0/k1-2",
+		Value: "v1-2",
+	},
+}
+
 // testNodes are used in some of the tests. It shouldn't be modified.
 var testNodes = etcd.Nodes{
 	&etcd.Node{
-		Key: "/myport/test/k0-0",
-		Dir: true,
-		Nodes: etcd.Nodes{
-			&etcd.Node{
-				Key: "/myport/test/k0-0/k1-0",
-				Dir: true,
-				Nodes: etcd.Nodes{
-					&etcd.Node{
-						Key:   "/myport/test/k0-0/k1-0/k2-0",
-						Value: "v2-0",
-					},
-					&etcd.Node{
-						Key:   "/myport/test/k0-0/k1-0/k2-1",
-						Value: "v2-1",
-					},
-					&etcd.Node{
-						Key:   "/myport/test/k0-0/k1-0/k2-2",
-						Value: "v2-2",
-					},
-				},
-			},
-			&etcd.Node{
-				Key:   "/myport/test/k0-0/k1-1",
-				Value: "v1-1",
-			},
-			&etcd.Node{
-				Key:   "/myport/test/k0-0/k1-2",
-				Value: "v1-2",
-			},
-		},
+		Key:   "/myport/test/k0-0",
+		Dir:   true,
+		Nodes: subNodes,
 	},
 	&etcd.Node{
 		Key:   "/myport/test/k0-1",

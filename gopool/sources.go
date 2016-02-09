@@ -29,7 +29,7 @@ type Sourcer interface {
 	// if there is currently no work.
 	Next() Task
 
-	// Add schedules a task. It aslo reschedules a task during cleanup
+	// Add schedules a task. It also reschedules a task during cleanup
 	// if a task was taken but was unable to be sent. As such, it should
 	// be available until the ManagedSource using it returns from a call
 	// to Wait().
@@ -39,7 +39,7 @@ type Sourcer interface {
 // ManagedSource wraps a Sourcer in a goroutine that synchronizes
 // access to the Sourcer.
 type ManagedSource struct {
-	// Source is the channel where tasks can be retreived.
+	// Source is the channel where tasks can be retrieved.
 	Source <-chan Task
 
 	// Add is the channel on which tasks can be added.

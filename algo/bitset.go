@@ -12,7 +12,7 @@ import (
 )
 
 // BitSet is a set of bit that can be turned on/off. They are commonly
-// used for space effeciency in data structures like bloom filters.
+// used for space efficiency in data structures like bloom filters.
 type BitSet []int
 
 // NewBitSet creates a BitSize of size n bits.
